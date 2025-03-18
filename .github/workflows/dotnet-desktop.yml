@@ -1,4 +1,4 @@
-name: .NET Core Desktop
+name: Build palc for Windows
 
 on:
   push:
@@ -23,13 +23,11 @@ jobs:
       with:
         fetch-depth: 0
 
-    # Install the .NET Core workload
     - name: Install .NET Core
       uses: actions/setup-dotnet@v4
       with:
         dotnet-version: 8.0.x
 
-    # Add  MSBuild to the PATH: https://github.com/microsoft/setup-msbuild
     - name: Setup MSBuild.exe
       uses: microsoft/setup-msbuild@v2
 
@@ -42,16 +40,20 @@ jobs:
     - name: Zip Release
       uses: TheDoctor0/zip-release@0.7.6
       with:
-        # Filename for archive
-        filename: release.zip # default is release.zip
-        # Base path for archive files
-        path: . # optional, default is .
-        # Working directory before zipping
-        directory: ${{ env.Solution_Name }}\bin\Release # optional, default is .
+        filename: release.zip
+        path: .
+        directory: ${{ env.Solution_Name }}\bin\Release
           
-    # Upload the MSIX package: https://github.com/marketplace/actions/upload-a-build-artifact
     - name: Upload build artifacts
       uses: actions/upload-artifact@v4
       with:
-        name: ZIP
+        name: build
         path: ${{ env.Solution_Name }}\bin\Release\release.zip
+
+    - name: Upload files to a GitHub release
+      uses: svenstaro/upload-release-action@2.9.0
+      with:
+        file: ${{ env.Solution_Name }}\bin\Release
+        asset_name: palc_build.zip
+        draft: true # optional
+              

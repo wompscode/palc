@@ -34,17 +34,17 @@ jobs:
     - name: Dependencies
       run: dotnet restore ${{env.Solution_Name}}
 
-    - name: Build
+    - name: Build palc
       run: dotnet build ${{env.Solution_Name}} --configuration Release --no-restore
 
-    - name: Zip Release
+    - name: Zip build
       uses: TheDoctor0/zip-release@0.7.6
       with:
         filename: release.zip
         path: .
         directory: ${{ env.Solution_Name }}\bin\Release
           
-    - name: Upload build artifacts
+    - name: Upload artifacts
       uses: actions/upload-artifact@v4
       with:
         name: build
@@ -53,6 +53,6 @@ jobs:
     - name: Upload files to a GitHub release
       uses: svenstaro/upload-release-action@2.9.0
       with:
-        file: ${{ env.Solution_Name }}\bin\Release
+        file: ${{ env.Solution_Name }}\bin\Release\release.zip
         asset_name: palc_build.zip
         draft: true

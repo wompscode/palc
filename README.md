@@ -11,4 +11,6 @@ With an AMD Ryzen 5 5600, palc took only `5m15s` to re-encode `1091` songs with 
 You will have to install `ffmpeg` on your system, or place `ffmpeg.exe` in the same directory as palc. This can be done using `winget`, `brew`, whatever package manager your system uses or by downloading it from [here](https://ffmpeg.org/download.html).
 &nbsp;  
 &nbsp;  
-Uses the following NuGet packages: [z440.atl.core](https://www.nuget.org/packages/z440.atl.core), [System.CommandLine](https://www.nuget.org/packages/System.CommandLine), [Pastel](https://www.nuget.org/packages/Pastel), [FFMpegCore](https://www.nuget.org/packages/FFMpegCore).
+Uses the following NuGet packages: [z440.atl.core](https://www.nuget.org/packages/z440.atl.core), [System.CommandLine](https://www.nuget.org/packages/System.CommandLine), [Pastel](https://www.nuget.org/packages/Pastel), [FFMpegCore](https://www.nuget.org/packages/FFMpegCore).  
+  
+For easy tray-based usage, you can use palc in conjunction with [palc_TrayIcon](https://github.com/wompscode/palc_TrayIcon).

@@ -9,6 +9,7 @@
 namespace palc;
 public static class Structs
 {
+    // taken from phdt, because Consistency is cool and Good!
     public struct ConsoleColourScheme
     {
         public ConsoleColourSet Init { get; init; }

@@ -1,4 +1,4 @@
-name: Build palc
+name: Build palc for Release
 
 on:
   push:
@@ -42,7 +42,7 @@ jobs:
       with:
         filename: release.zip
         path: .
-        directory: ${{ env.Solution_Name }}\bin\Release
+        directory: ${{ env.Solution_Name }}\bin\Release\net8.0\
           
     - name: Upload artifacts
       uses: actions/upload-artifact@v4
@@ -54,5 +54,6 @@ jobs:
       uses: svenstaro/upload-release-action@2.9.0
       with:
         file: ${{ env.Solution_Name }}\bin\Release\release.zip
-        asset_name: palc_build.zip
+        asset_name: palc_net8.zip
+        body: "`./palc.exe --help` (or `dotnet palc.dll --help`) for possible options.  Minimal usage: `./palc.exe -d <directory>` (default opts: 256kbps, libopus, 4 max tasks)  Automatically compiled and released with GitHub Actions."
         draft: true

@@ -8,6 +8,7 @@
 namespace palc;
 public static class Logging
 {
+    // taken from phdt, because Consistency is cool and Good!
     public static void Log(string message, string? prefix = null, Structs.ConsoleColourSet? colourScheme = null)
     {
         DateTime now = DateTime.Now;

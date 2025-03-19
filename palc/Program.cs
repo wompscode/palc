@@ -14,6 +14,8 @@
  */
 
 using static palc.Structs;
+using static palc.MiscFunctions;
+using static palc.Logging;
 
 using FFMpegCore;
 using ATL;
@@ -22,16 +24,19 @@ using System.Diagnostics;
 using System.CommandLine;
 using System.CommandLine.NamingConventionBinder;
 using System.Drawing;
+using System.Reflection;
 
 namespace palc;
 
 static class Program
 {
+    private static readonly string? Version = Assembly.GetExecutingAssembly().GetName().Version?.ToString();
+    
     private static SemaphoreSlim? semaphore;
     static readonly List<Task<bool>> encodeTasks = new();
-    private static readonly Stopwatch timer = new ();
-    
     private static int maxTasks = 4;
+    
+    private static readonly Stopwatch timer = new ();
     private static bool shouldDelete;
 
     private static readonly ConsoleColourScheme ColourScheme = new()
@@ -48,8 +53,8 @@ static class Program
         },
         Status = new()
         {
-            Prefix = Color.DarkViolet,
-            Message = Color.BlueViolet
+            Prefix = Color.MediumOrchid,
+            Message = Color.Orchid
         },
         Fatal = new()
         {
@@ -58,8 +63,8 @@ static class Program
         },
         Verbose = new()
         {
-            Prefix = Color.DarkCyan,
-            Message = Color.Cyan
+            Prefix = Color.LimeGreen,
+            Message = Color.Lime
         },
         Finish = new()
         {
@@ -67,31 +72,6 @@ static class Program
             Message = Color.Green
         }
     };
-    
-    private static string ElapsedTime(TimeSpan ts) {
-        return String.Format("{0:00}:{1:00}:{2:00}.{3:00}",
-            ts.Hours, ts.Minutes, ts.Seconds,
-            ts.Milliseconds / 10);
-    }
-
-    private static string Extension(string codec)
-    {
-        switch (codec)
-        {
-            case "aac":
-                return "aac";
-            case "libvorbis":
-                return "ogg";
-            case "libopus":
-                return "opus";
-            case "libmp3lame":
-                return "mp3";
-            case "flac":
-                return "flac";
-            default:
-                return codec;
-        }
-    }
     
     static int Main(string[] args)
     {
@@ -110,108 +90,118 @@ static class Program
         
         _rootCommand.Handler = CommandHandler.Create<string, int, string, bool, int, bool>((directory, bitrate, codec, delete, tasks, listcodecs) =>
         {
-            if (tasks != 0) maxTasks = tasks;
-            semaphore = new SemaphoreSlim(0, maxTasks);
-            
-            Logging.Log($"palc - phoebe's automated library converter (max tasks: {maxTasks})", "init", ColourScheme.Init);
-            
-            if (listcodecs)
+            Log($"palc {Version} (max tasks: {maxTasks})", "init", ColourScheme.Init);
+
+            // ffmpeg sanity check
+            if (InPathOrAppDirectory("ffmpeg.exe") == false)
             {
-                Logging.Log($"palc supports any codec that ffmpeg does technically, however, we recommend these:", "info", ColourScheme.Status);
-                Logging.Log("libopus (default), aac, libmp3lame, flac, libvorbis.", "info", ColourScheme.Status);
+                Log("ffmpeg is not in PATH or working directory.", "fatal", ColourScheme.Fatal);
+                Environment.Exit(2);
                 return;
             }
             
+            // list all codecs that are recommended for this, but you could technically use anything, but I'm going to rely on the user not doing that because you don't get an app like this to do that.
+            if (listcodecs)
+            {
+                Log($"palc supports any codec that ffmpeg does technically, however, we recommend these:", "info", ColourScheme.Status);
+                Log("libopus (default), aac, libmp3lame, flac, libvorbis.", "info", ColourScheme.Status);
+                return;
+            }
+            
+            // set variables
+            if (tasks != 0) maxTasks = tasks;
             if (bitrate == 0) bitrate = 256;
             shouldDelete = delete;
             if (string.IsNullOrEmpty(codec)) codec = "libopus";
             
+            // if there's a directory, get going
             if (!string.IsNullOrEmpty(directory))
             {
-                string [] x = Directory.GetFiles(directory, "*.*", SearchOption.AllDirectories);
+                // init semaphore and start working timer 
+                semaphore = new SemaphoreSlim(0, maxTasks);
                 timer.Start();
-                foreach (string file in x)
+                
+                // get all files in directory and the subdirectories in it
+                string [] files = Directory.GetFiles(directory, "*.*", SearchOption.AllDirectories);
+                foreach (string file in files)
                 {
-                    FileInfo fInfo = new FileInfo(file);
-                    string ext = Path.GetExtension(file);
+                    FileInfo fInfo = new FileInfo(file); // create FileInfo for the current file
+                    string ext = Path.GetExtension(file); // get its extension and check if it's a common music related extension.
                     if (ext == ".mp3" || ext == ".flac" || ext == ".opus" || ext == ".ogg" || ext == ".wav" || ext == ".m4a" || ext == ".alac" || ext == ".aac" || ext == ".aiff")
                     {
-                        encodeTasks.Add(Task.Run(async () => await Encode(fInfo.FullName, $"{fInfo.DirectoryName}\\{Path.GetFileNameWithoutExtension(fInfo.Name)}.{Extension(codec)}", codec, bitrate)));
-                        Logging.Log($"{file}: queued for conversion.", "status", ColourScheme.Status);
+                        // create encode task
+                        encodeTasks.Add(Task.Run(async () => fInfo.Directory != null && await Encode(fInfo.Name,fInfo.FullName,$"{Path.GetFileNameWithoutExtension(fInfo.Name)}.{Extension(codec)}", $"{Path.Combine(fInfo.Directory.FullName, $"{Path.GetFileNameWithoutExtension(fInfo.Name)}.{Extension(codec)}")}", codec, bitrate)));
+                        Log($"{file}: queued for conversion.", "status", ColourScheme.Status);
                     }
                     else
                     {
-                        Logging.Log($"{file}: unsupported type.", "status", ColourScheme.Warning);
+                        Log($"{file}: unsupported type.", "status", ColourScheme.Warning);
                     }
                 }
                 
-                semaphore?.Release(maxTasks);
-                Task.WaitAll(encodeTasks.ToArray<Task>());
-                timer.Stop();
-                Logging.Log($"completed in {ElapsedTime(timer.Elapsed)}.", "finished", ColourScheme.Finish);
+                semaphore?.Release(maxTasks); // start encode tasks
+                Task.WaitAll(encodeTasks.ToArray<Task>()); // wait until they're done
+                timer.Stop(); // stop timer
+                Log($"completed in {ElapsedTime(timer.Elapsed)}.", "finished", ColourScheme.Finish);
             }
             else
             {
-                Logging.Log($"no directory specified.", "fatal", ColourScheme.Fatal);
+                // no directory lol
+                Log($"no directory specified.", "fatal", ColourScheme.Fatal);
+                Environment.Exit(1);
             }
         });
         
         return _rootCommand.Invoke(args);
     }
     
-    private static async Task<bool> Encode(string input, string output, string codec, int bitrate)
+    private static async Task<bool> Encode(string inputName, string input, string outputName, string output, string codec, int bitrate)
     {
+        // no semaphore? Stop now!
         if (semaphore == null) return false;
-        await semaphore.WaitAsync();
-        if (Path.GetExtension(input) == Path.GetExtension(output))
+        await semaphore.WaitAsync(); // wait for semaphore to say go
+        if (Path.GetExtension(input) == Path.GetExtension(output)) // check if file is same output format
         {
-            Logging.Log($"file format of {input} is the same as the output format, skipping..", "warning", ColourScheme.Warning);
+            Log($"{inputName}: file format is the same as the output format, skipping..", "warning", ColourScheme.Warning);
             semaphore.Release();
             return false;
         }
-        Logging.Log($"converting {input} to {codec}..", "status", ColourScheme.Status);
-        Stopwatch sw = Stopwatch.StartNew();
+
+        if (File.Exists(output)) // check if output already exists
+        {
+            Log($"{outputName}: output already exists, skipping..", "warning", ColourScheme.Warning);
+            semaphore.Release();
+            return false;
+        }
+        
+        // init working timer
+        Stopwatch workingTimer = Stopwatch.StartNew();
+        
+        Log($"{inputName}: re-encoding as {codec}..", "status", ColourScheme.Status);
         FFMpegArgumentProcessor ffmpeg = FFMpegArguments.FromFileInput(input).OutputToFile(output, false,
             options => options.WithAudioCodec(codec).WithCustomArgument("-map_metadata 0").WithTagVersion(3)
-                .WithAudioBitrate(bitrate));
-        bool outcome = await ffmpeg.ProcessAsynchronously();
-        semaphore.Release();
+                .WithAudioBitrate(bitrate)); // setup ffmpeg
+        bool outcome = await ffmpeg.ProcessAsynchronously(); // start ffmpeg
+        semaphore.Release(); // release upon finish
         
         if (outcome)
         {
-            // copy some baseline metadata Just In Case! because ffmpeg likes to NOT COPY METADATA SOMETIMES
-            // also in case album art doesn't copy because yeah that happens too
-            
+            // clone metadata (including cover art!) just in case ffmpeg failed to copy it
             Track newTrack = new Track(output);
-            Track? oldTrack = new Track(input);
-
-            if(newTrack.EmbeddedPictures.Count > 0) newTrack.EmbeddedPictures.Clear();
-            IList<PictureInfo> pictures = oldTrack.EmbeddedPictures;
-            if (pictures.Count > 0)
-            {
-                foreach(PictureInfo pic in pictures) 
-                    newTrack.EmbeddedPictures.Add(pic);
-            }
-
-            newTrack.Artist = oldTrack.Artist;
-            newTrack.Title = oldTrack.Title;
-            newTrack.Album = oldTrack.Album;
-            newTrack.AlbumArtist = oldTrack.AlbumArtist;
-            newTrack.Year = oldTrack.Year;
-            newTrack.Genre = oldTrack.Genre;
-            newTrack.TrackNumber = oldTrack.TrackNumber;
+            Track oldTrack = new Track(input);
+            oldTrack.CopyMetadataTo(newTrack);
             await newTrack.SaveAsync();
-            
-            oldTrack = null;
             
             if (shouldDelete)
             {
                 if(File.Exists(input)) File.Delete(input);
-                Logging.Log($"deleted {input}..", "status", ColourScheme.Status);
+                Log($"{inputName}: deleted.", "status", ColourScheme.Status);
             }
         }
-        sw.Stop();
-        Logging.Log(outcome ? $"converted {input}, took {ElapsedTime(sw.Elapsed)}." : $"failed to convert {input}", "status", ColourScheme.Finish);
+        // stop working timer
+        workingTimer.Stop();
+        Log(outcome ? $"{outputName}: re-encoded in {ElapsedTime(workingTimer.Elapsed)}." : $"{inputName}: failed to re-encode.", "status", outcome ? ColourScheme.Verbose : ColourScheme.Fatal); // repurpose verbose as status finish
         return outcome;
+
     }
 }

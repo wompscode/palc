@@ -25,6 +25,7 @@ using System.CommandLine;
 using System.CommandLine.NamingConventionBinder;
 using System.Drawing;
 using System.Reflection;
+using System.Runtime.InteropServices;
 
 namespace palc;
 
@@ -38,7 +39,7 @@ static class Program
     
     private static readonly Stopwatch timer = new ();
     private static bool shouldDelete;
-
+    
     private static readonly ConsoleColourScheme ColourScheme = new()
     {
         Init = new()
@@ -82,22 +83,27 @@ static class Program
             new Option<string>(["--codec", "-c"], "codec to re-encode to (default: libopus)"),
             new Option<bool>(["--delete", "-dl"], "delete input files (default: no)"),
             new Option<int>(["--tasks", "-t"], "maximum concurrent encoding tasks (default: 4, recommended: however many threads you have)"),
-            new Option<bool>(["--listcodecs", "-lc"], "list available codecs.")
+            new Option<string>(["--extension", "-e"], "only look for this extension (default: all audio)"),
+            new Option<bool>(["--listcodecs", "-lc"], "list available codecs."),
         ];
 
         _rootCommand.Description = "Recursively convert whole music library from one format to another.";
         _rootCommand.Name = "palc";
         
-        _rootCommand.Handler = CommandHandler.Create<string, int, string, bool, int, bool>((directory, bitrate, codec, delete, tasks, listcodecs) =>
+        _rootCommand.Handler = CommandHandler.Create<string, int, string, bool, int, string, bool>((directory, bitrate, codec, delete, tasks, extension, listcodecs) =>
         {
             Log($"palc {Version} (max tasks: {maxTasks})", "init", ColourScheme.Init);
 
             // ffmpeg sanity check
-            if (InPathOrAppDirectory("ffmpeg.exe") == false)
+            if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
             {
-                Log("ffmpeg is not in PATH or working directory.", "fatal", ColourScheme.Fatal);
-                Environment.Exit(2);
-                return;
+                // going to just trust that users will have ffmpeg on other platforms. easy enough.
+                if (InPathOrAppDirectory("ffmpeg.exe") == false)
+                {
+                    Log("ffmpeg is not in PATH or working directory.", "fatal", ColourScheme.Fatal);
+                    Environment.Exit(2);
+                    return;
+                }
             }
             
             // list all codecs that are recommended for this, but you could technically use anything, but I'm going to rely on the user not doing that because you don't get an app like this to do that.
@@ -107,13 +113,13 @@ static class Program
                 Log("libopus (default), aac, libmp3lame, flac, libvorbis.", "info", ColourScheme.Status);
                 return;
             }
-            
+
             // set variables
             if (tasks != 0) maxTasks = tasks;
             if (bitrate == 0) bitrate = 256;
+            
             shouldDelete = delete;
             if (string.IsNullOrEmpty(codec)) codec = "libopus";
-            
             // if there's a directory, get going
             if (!string.IsNullOrEmpty(directory))
             {
@@ -127,15 +133,31 @@ static class Program
                 {
                     FileInfo fInfo = new FileInfo(file); // create FileInfo for the current file
                     string ext = Path.GetExtension(file); // get its extension and check if it's a common music related extension.
-                    if (ext == ".mp3" || ext == ".flac" || ext == ".opus" || ext == ".ogg" || ext == ".wav" || ext == ".m4a" || ext == ".alac" || ext == ".aac" || ext == ".aiff")
+                    if (string.IsNullOrEmpty(extension) == false)
                     {
-                        // create encode task
-                        encodeTasks.Add(Task.Run(async () => fInfo.Directory != null && await Encode(fInfo.Name,fInfo.FullName,$"{Path.GetFileNameWithoutExtension(fInfo.Name)}.{Extension(codec)}", $"{Path.Combine(fInfo.Directory.FullName, $"{Path.GetFileNameWithoutExtension(fInfo.Name)}.{Extension(codec)}")}", codec, bitrate)));
-                        Log($"{file}: queued for conversion.", "status", ColourScheme.Status);
+                        if (ext == extension)
+                        {
+                            // create encode task
+                            encodeTasks.Add(Task.Run(async () => fInfo.Directory != null && await Encode(fInfo.Name,fInfo.FullName,$"{Path.GetFileNameWithoutExtension(fInfo.Name)}.{Extension(codec)}", $"{Path.Combine(fInfo.Directory.FullName, $"{Path.GetFileNameWithoutExtension(fInfo.Name)}.{Extension(codec)}")}", codec, bitrate)));
+                            Log($"{file}: queued for conversion.", "status", ColourScheme.Status);
+                        }
+                        else
+                        {
+                            Log($"{file}: not chosen type.", "status", ColourScheme.Warning);
+                        }
                     }
                     else
                     {
-                        Log($"{file}: unsupported type.", "status", ColourScheme.Warning);
+                        if (ext == ".mp3" || ext == ".flac" || ext == ".opus" || ext == ".ogg" || ext == ".wav" || ext == ".m4a" || ext == ".alac" || ext == ".aac" || ext == ".aiff")
+                        {
+                            // create encode task
+                            encodeTasks.Add(Task.Run(async () => fInfo.Directory != null && await Encode(fInfo.Name,fInfo.FullName,$"{Path.GetFileNameWithoutExtension(fInfo.Name)}.{Extension(codec)}", $"{Path.Combine(fInfo.Directory.FullName, $"{Path.GetFileNameWithoutExtension(fInfo.Name)}.{Extension(codec)}")}", codec, bitrate)));
+                            Log($"{file}: queued for conversion.", "status", ColourScheme.Status);
+                        }
+                        else
+                        {
+                            Log($"{file}: unsupported type.", "status", ColourScheme.Warning);
+                        }
                     }
                 }
                 
